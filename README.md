@@ -93,7 +93,7 @@ openai
 ```
 
 ## ❤️ Credits
-This tool was built by me, with the help of ChatGPT ✨
+This tool was built by me, with the help of ChatGPT ✨ in 1 hour.
 
 Enjoy your custom morning Telegram briefing! ☕
 """
