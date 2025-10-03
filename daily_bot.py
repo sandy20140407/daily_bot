@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 import feedparser
 from time import mktime
+import yfinance as yf
+
 
 # ==== OpenAI v1+ 新用法 ==== 额度用完了，换一个
 # from openai import OpenAI
@@ -71,8 +73,20 @@ def get_exchange_rates():
     except Exception:
         return 0.0, 0.0, 0.0
 
+# === Gold price ===
+def get_gold_price():
+    try:
+        ticker = yf.Ticker("XAUUSD=X")   # 黄金现货（美元）
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return float(data["Close"][-1])
+        else:
+            return 0.0
+    except Exception as e:
+        return 0.0
+
 # === News Summary using OpenAI (v1+ SDK) ===
-def get_news_summary(max_items=5, per_feed=3):
+def get_news_summary(max_items=10, per_feed=3):
     """
     聚合多个 RSS：
       - 每个源取 per_feed 条
@@ -140,6 +154,7 @@ def job():
     temp, feelslike, condition, wind = get_weather()
     outfit = get_outfit_suggestion(feelslike, condition)
     usd, cny, sgd = get_exchange_rates()
+    gold = get_gold_price()
     news = get_news_summary()
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -147,8 +162,10 @@ def job():
         f"*Good morning!* \n\n*📅 {now}*\n\n"
         f"*🌤 Weather in {CITY}*: {temp}°C（体感 {feelslike}°C）, {condition}, 风速{wind}km/h\n"
         f"*👕 Outfit Tip*: {outfit}\n\n"
+        f"*💱 Exchange Rates (EUR)*:\nUSD: {usd:.4f}, CNY: {cny:.4f}, SGD: {sgd:.4f}\n\n"
+        f"\n*🥇 Gold Price*: ${gold:.2f} / oz \n\n"
         f"*📰 News Summary:*\n{news}\n\n"
-        f"*💱 Exchange Rates (EUR)*:\nUSD: {usd:.4f}, CNY: {cny:.4f}, SGD: {sgd:.4f}"
+        
     )
     push_to_telegram(message)
 
