@@ -75,15 +75,24 @@ def get_exchange_rates():
 
 # === Gold price ===
 def get_gold_price():
-    try:
-        ticker = yf.Ticker("XAUUSD=X")   # 黄金现货（美元）
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return float(data["Close"][-1])
-        else:
-            return 0.0
-    except Exception as e:
-        return 0.0
+    """
+    依次尝试 Yahoo Finance 的黄金代码：
+      1) XAUUSD=X  现货黄金（美元）
+      2) XAU=X     现货黄金（美元，另一写法）
+      3) GC=F      COMEX 黄金期货（作为兜底）
+    返回: (price_usd_per_oz, symbol_used)
+    """
+    candidates = ["XAUUSD=X", "XAU=X", "GC=F"]
+    for sym in candidates:
+        try:
+            # 取最近5天的日线，避免当天无数据导致空
+            data = yf.download(sym, period="5d", interval="1d", progress=False)
+            close = data["Close"].dropna()
+            if not close.empty:
+                return float(close.iloc[-1]), sym
+        except Exception:
+            continue
+    return 0.0, None
 
 # === News Summary using OpenAI (v1+ SDK) ===
 def get_news_summary(max_items=10, per_feed=3):
@@ -154,7 +163,8 @@ def job():
     temp, feelslike, condition, wind = get_weather()
     outfit = get_outfit_suggestion(feelslike, condition)
     usd, cny, sgd = get_exchange_rates()
-    gold = get_gold_price()
+    gold_usd, gold_sym = get_gold_price()
+    gold_eur = (gold_usd / usd) if (gold_usd and usd) else 0.0  # 用你的 EUR 基准汇率换算成欧元/盎司
     news = get_news_summary()
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -163,7 +173,7 @@ def job():
         f"*🌤 Weather in {CITY}*: {temp}°C（体感 {feelslike}°C）, {condition}, 风速{wind}km/h\n"
         f"*👕 Outfit Tip*: {outfit}\n\n"
         f"*💱 Exchange Rates (EUR)*:\nUSD: {usd:.4f}, CNY: {cny:.4f}, SGD: {sgd:.4f}\n\n"
-        f"\n*🥇 Gold Price*: ${gold:.2f} / oz \n\n"
+        f"*🥇 Gold*: ${gold_usd:.2f}/oz (~€{gold_eur:.2f}/oz){'' if not gold_sym else f' [{gold_sym}]'}\n\n"
         f"*📰 News Summary:*\n{news}\n\n"
         
     )
