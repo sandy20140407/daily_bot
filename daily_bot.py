@@ -5,28 +5,32 @@ import requests
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-import openai
+
+# ==== OpenAI v1+ 新用法 ====
+from openai import OpenAI
 
 # === Load config from .env ===
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')
-CITY = os.getenv('CITY', 'Dublin')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+TELEGRAM_CHAT_ID   = os.getenv('TELEGRAM_CHAT_ID')
+WEATHER_API_KEY    = os.getenv('WEATHER_API_KEY')
+CITY               = os.getenv('CITY', 'Dublin')
+OPENAI_API_KEY     = os.getenv('OPENAI_API_KEY')
 
-openai.api_key = OPENAI_API_KEY
+# OpenAI 客户端（v1+）
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # === Weather Info ===
 def get_weather():
     url = f"http://api.weatherapi.com/v1/current.json?key={WEATHER_API_KEY}&q={CITY}"
-    res = requests.get(url)
+    res = requests.get(url, timeout=15)
+    res.raise_for_status()
     data = res.json()
-    temp_c = data['current']['temp_c']
+    temp_c      = data['current']['temp_c']
     feelslike_c = data['current']['feelslike_c']
-    condition = data['current']['condition']['text']
-    wind_kph = data['current']['wind_kph']
+    condition   = data['current']['condition']['text']
+    wind_kph    = data['current']['wind_kph']
     return temp_c, feelslike_c, condition, wind_kph
 
 # === Outfit Suggestion ===
@@ -50,40 +54,39 @@ def get_outfit_suggestion(feelslike, condition):
 def get_exchange_rates():
     url = "https://open.er-api.com/v6/latest/EUR"
     try:
-        res = requests.get(url)
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()
         data = res.json()
-        if 'rates' not in data:
-            raise KeyError("'rates' not in fallback API response")
-        return data['rates']['USD'], data['rates']['CNY'], data['rates']['SGD']
-    except Exception as e:
+        rates = data.get('rates', {})
+        return rates.get('USD', 0.0), rates.get('CNY', 0.0), rates.get('SGD', 0.0)
+    except Exception:
         return 0.0, 0.0, 0.0
 
-# === News Summary using OpenAI ===
+# === News Summary using OpenAI (v1+ SDK) ===
 def get_news_summary():
     headlines = [
         "ECB cuts rates by 25 bps amid economic slowdown.",
         "Trump announces new tariffs on EU goods.",
         "Global markets see tech rebound."
     ]
-    prompt = """
-Summarize the following news headlines into 3 short bullet points:
-"""
-    prompt += "\n".join(headlines)
-
+    user_prompt = (
+        "Summarize the following news headlines into 3 short bullet points. "
+        "Keep each bullet under 20 words, neutral tone:\n"
+        + "\n".join(f"- {h}" for h in headlines)
+    )
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",  # 或者 gpt-3.5-turbo 可替换
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that summarizes news."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You concisely summarize news."},
+                {"role": "user", "content": user_prompt}
             ],
-            max_tokens=100,
-            temperature=0.7
+            max_tokens=180,
+            temperature=0.3,
         )
-        summary = response['choices'][0]['message']['content']
-        return summary
-    except openai.error.OpenAIError as e:
-        return f"[OpenAI API error: {str(e)}]"
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        return f"[OpenAI API error: {e}]"
 
 # === Telegram Push ===
 def push_to_telegram(message):
@@ -93,7 +96,10 @@ def push_to_telegram(message):
         'text': message,
         'parse_mode': 'Markdown'
     }
-    requests.post(url, data=payload)
+    try:
+        requests.post(url, data=payload, timeout=15)
+    except Exception:
+        pass
 
 # === Daily Job ===
 def job():
@@ -103,12 +109,13 @@ def job():
     news = get_news_summary()
 
     now = datetime.now().strftime("%Y-%m-%d")
-    message = f"*Good morning!* \n\n*📅 {now}*\n\n"
-    message += f"*🌤 Weather in {CITY}*: {temp}°C（体感 {feelslike}°C）, {condition}, 风速{wind}km/h\n"
-    message += f"*👕 Outfit Tip*: {outfit}\n\n"
-    message += f"*📰 News Summary:*\n{news}\n\n"
-    message += f"*💱 Exchange Rates (EUR)*:\nUSD: {usd:.4f}, CNY: {cny:.4f}, SGD: {sgd:.4f}"
-
+    message = (
+        f"*Good morning!* \n\n*📅 {now}*\n\n"
+        f"*🌤 Weather in {CITY}*: {temp}°C（体感 {feelslike}°C）, {condition}, 风速{wind}km/h\n"
+        f"*👕 Outfit Tip*: {outfit}\n\n"
+        f"*📰 News Summary:*\n{news}\n\n"
+        f"*💱 Exchange Rates (EUR)*:\nUSD: {usd:.4f}, CNY: {cny:.4f}, SGD: {sgd:.4f}"
+    )
     push_to_telegram(message)
 
 if __name__ == "__main__":
