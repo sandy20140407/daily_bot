@@ -72,7 +72,7 @@ def get_exchange_rates():
         return 0.0, 0.0, 0.0
 
 # === News Summary using OpenAI (v1+ SDK) ===
-def get_news_summary():
+def get_news_summary(max_items=5, per_feed=3):
     """
     聚合多个 RSS：
       - 每个源取 per_feed 条
