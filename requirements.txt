@@ -3,3 +3,4 @@ schedule
 python-dotenv
 openai>=1.0.0
 feedparser
+yfinance
