@@ -3,11 +3,20 @@
 
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
+import feedparser
+from time import mktime
 
-# ==== OpenAI v1+ 新用法 ====
-from openai import OpenAI
+# ==== OpenAI v1+ 新用法 ==== 额度用完了，换一个
+# from openai import OpenAI
+
+# 可根据需要增删来源；也支持用环境变量 NEWS_FEEDS 覆盖（用逗号分隔）
+DEFAULT_FEEDS = [
+    "https://feeds.bbci.co.uk/news/rss.xml",           # BBC Top Stories
+    "https://feeds.reuters.com/reuters/topNews",       # Reuters Top
+    "http://rss.cnn.com/rss/edition.rss",              # CNN World
+]
 
 # === Load config from .env ===
 load_dotenv()
@@ -19,7 +28,7 @@ CITY               = os.getenv('CITY', 'Dublin')
 OPENAI_API_KEY     = os.getenv('OPENAI_API_KEY')
 
 # OpenAI 客户端（v1+）
-client = OpenAI(api_key=OPENAI_API_KEY)
+# client = OpenAI(api_key=OPENAI_API_KEY)
 
 # === Weather Info ===
 def get_weather():
@@ -64,29 +73,54 @@ def get_exchange_rates():
 
 # === News Summary using OpenAI (v1+ SDK) ===
 def get_news_summary():
-    headlines = [
-        "ECB cuts rates by 25 bps amid economic slowdown.",
-        "Trump announces new tariffs on EU goods.",
-        "Global markets see tech rebound."
-    ]
-    user_prompt = (
-        "Summarize the following news headlines into 3 short bullet points. "
-        "Keep each bullet under 20 words, neutral tone:\n"
-        + "\n".join(f"- {h}" for h in headlines)
-    )
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",  # 或者 gpt-3.5-turbo 可替换
-            messages=[
-                {"role": "system", "content": "You concisely summarize news."},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=180,
-            temperature=0.3,
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception as e:
-        return f"[OpenAI API error: {e}]"
+    """
+    聚合多个 RSS：
+      - 每个源取 per_feed 条
+      - 合并去重（按标题）
+      - 按发布时间降序
+      - 截断为 max_items 条
+      - 返回用于 Telegram 的多行字符串
+    """
+    feed_list = os.getenv("NEWS_FEEDS", "")
+    feeds = [u.strip() for u in feed_list.split(",") if u.strip()] or DEFAULT_FEEDS
+
+    items = []
+    for url in feeds:
+        d = feedparser.parse(url)
+        for entry in d.entries[:per_feed]:
+            title = getattr(entry, "title", "").strip()
+            if not title:
+                continue
+            # 发布时间（可能没有，做兼容）
+            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                dt = datetime.fromtimestamp(mktime(entry.published_parsed), tz=timezone.utc)
+            elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                dt = datetime.fromtimestamp(mktime(entry.updated_parsed), tz=timezone.utc)
+            else:
+                dt = datetime.now(timezone.utc)
+            link = getattr(entry, "link", "").strip()
+            items.append({"title": title, "link": link, "dt": dt})
+
+    # 去重（按小写标题）
+    seen = set()
+    deduped = []
+    for it in items:
+        k = it["title"].lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        deduped.append(it)
+
+    # 按时间最新在前
+    deduped.sort(key=lambda x: x["dt"], reverse=True)
+    top = deduped[:max_items]
+
+    if not top:
+        return "⚠️ No headlines fetched."
+
+    # 组合成简洁的多行文本（Markdown 兼容：不放链接时更稳；要带链接请确保标题不含方括号）
+    lines = [f"- {it['title']}" for it in top]
+    return "\n".join(lines)
 
 # === Telegram Push ===
 def push_to_telegram(message):
