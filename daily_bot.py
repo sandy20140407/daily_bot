@@ -26,7 +26,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID   = os.getenv('TELEGRAM_CHAT_ID')
 WEATHER_API_KEY    = os.getenv('WEATHER_API_KEY')
-CITY               = os.getenv('CITY', 'Dublin')
+CITY               = os.getenv('CITY', 'Singapore')
 OPENAI_API_KEY     = os.getenv('OPENAI_API_KEY')
 
 # OpenAI 客户端（v1+）
@@ -58,8 +58,12 @@ def get_outfit_suggestion(feelslike, condition):
         return "天气舒适，长袖 or 外套 + 牛仔裤，轻松出门不费劲。😎"
     elif feelslike < 25:
         return "有点热，T恤 + 裙子或短裤，记得防晒霜！☀️"
+    elif feelslike < 32:
+        return "有点闷热，轻薄透气最重要！短袖短裤+防晒一定要有 ☀️"
+    elif feelslike < 35:
+        return "体感高温！尽量待在空调房，多喝水，别被热化了 😵‍💫💦"
     else:
-        return "炎热爆表，穿得越少越好！轻薄短袖+遮阳帽走起～🌡️🩳"
+        return "桑拿模式MAX！能不出门就别出门，出门记得防晒+遮阳伞！🔥🫠"
 
 # === Exchange Rate ===
 def get_exchange_rates():
