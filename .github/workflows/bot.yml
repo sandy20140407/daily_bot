@@ -3,7 +3,7 @@ name: daily_bot
 on:
   schedule:
     # GitHub 用 UTC。例：每天 07:30 UTC
-    - cron: "00 8 * * *"
+    - cron: "00 2 * * *"
   workflow_dispatch: {}   # 支持手动运行
   # push:
   #   paths: ["bot.py", "requirements.txt", ".github/workflows/bot.yml"]
